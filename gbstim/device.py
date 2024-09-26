@@ -32,10 +32,11 @@ class MeasureQubit(PhysicalQubit):
 
 class Device():
 
-    def __init__(self, shape: tuple[int, int]) -> None:
+    def __init__(self, shape: tuple[int, int], spacing: int=5) -> None:
         self.shape = shape
         self.device_array = np.empty(shape, dtype=PhysicalQubit)
         self.global_coords = np.array([[(i, j) for j in range(shape[1])] for i in range(shape[0])], dtype="int,int")
+        self.spacing = spacing
     
     def get_qubit(self, coords: tuple[int, int]) -> PhysicalQubit:
         return self.device_array[coords[0]][coords[1]]

@@ -4,6 +4,7 @@ import stim
 import galois
 import collections
 from ldpc import bposd_decoder
+from concorde.tsp import TSPSolver
 
 class LogicalQubit():
 
@@ -21,7 +22,17 @@ class GBMeasureQubit(MeasureQubit):
 class GBCode():
 
     def __init__(self, device: Device, A_poly: list[tuple[int, int]], B_poly: list[tuple[int, int]], l, m):
+        '''
+        args:
+            device: Underlying atom array device
+            A_poly: List of tuples (x_pow, y_pow) indicating terms in the a(x,y) polynomial
+            B_poly: List of tuples (x_pow, y_pow) indicating terms in the b(x,y) polynomial
+            l: Width of grid
+            m: Height of grid
+        '''
         self.device = device
+        self.a_poly = A_poly
+        self.b_poly = B_poly
 
         # Code Construction
         def permutation_matrix(dim, pow):
@@ -205,28 +216,75 @@ class GBCode():
         return d, min_prediction
 
     def move_atoms(self, atoms, shift):
-        #dist = abs(shift[0]) + abs(shift[1])
-        move_time = np.sqrt((6 * abs(shift[0]) * 5) / .02) + np.sqrt((6 * abs(shift[1]) * 5) / .02)
+        if not shift:
+            return 0 
+        move_time = np.sqrt((6 * abs(shift[0]) * self.device.spacing) / .02) + np.sqrt((6 * abs(shift[1]) * self.device.spacing) / .02)
         for atom in atoms:
             self.atom_pos[atom]= (self.atom_pos[atom][0] + shift[0], self.atom_pos[atom][1] + shift[1])
+        self.x_pos_history.append(self.atom_pos[self.x_ancilla[0]])
         return move_time
+    
+    def schedule_movement(self):
+        spacing = self.device.spacing
+        def gen_points(x_offset, y_offset, subgrid):
+            x_target = 2 * x_offset * spacing + subgrid[0]
+            y_target = 2 * y_offset * spacing + subgrid[1]
+            yield 0, [x_target, y_target]
+            if x_offset > 0:
+                yield 1, [x_target - 2 * spacing * self.l, y_target]
+            if y_offset > 0:
+                yield 2, [x_target, y_target - 2 * spacing * self.m]
+            if x_offset > 0 and y_offset > 0:
+                yield 3, [x_target - 2 * spacing * self.l, y_target - 2 * spacing * self.m]
+        pts = [self.x_ancilla[0].coords]
+        pts_dict = {}
+        for i, term in enumerate(self.b_poly):
+            for j, subgrid in gen_points(*term, (0, 1)):
+                pts_dict[tuple(subgrid)] = 4 * i + j
+                pts.append(subgrid)
+        for i, term in enumerate(self.a_poly):
+            for j, subgrid in gen_points(*term, (1, 0)):
+                pts_dict[tuple(subgrid)] = len(self.b_poly) * 4 + 4 * i + j
+                pts.append(subgrid)
+        pt_array = np.array(pts)
+        sol = TSPSolver().from_data(pt_array[:, 0], pt_array[:, 1], norm="EUC_2D").solve(verbose=False).tour[1:]
+        ms_perm = []
+        # Z Sched
+        for pt_idx in sol:
+            ms_perm.append(pts_dict[tuple(pt_array[pt_idx])])
+        # X Sched
+        for pt_idx in sol:
+            ms_perm.append(pts_dict[tuple(pt_array[pt_idx])] + len(self.b_poly) * 4 + len(self.a_poly) * 4)
 
-    def rearrange(self, move_atoms, shifts):
-        total_move_time = 0
-        cumulative_shift = (0,0)
-        shifts = collections.OrderedDict(sorted(shifts.items(), key=lambda item: -len(item[1])))
-        for new_shift, atoms in shifts.items():
-            move_time = self.move_atoms(move_atoms, (new_shift[0] - cumulative_shift[0], new_shift[1] - cumulative_shift[1]))
-            cumulative_shift = (cumulative_shift[0] + new_shift[0], cumulative_shift[1] + new_shift[1])
-            for atom in atoms:
-                move_atoms.remove(atom)
-            total_move_time += move_time
-        return total_move_time
-
+        return ms_perm
     
     def stim_circ(self, gate1_err=0, gate2_err=0, readout_err=0, t1=1e6, t2=1e6, tr=1e6, idle=True, dec_type="all", num_rounds=1, ms_perm=None):
         '''
-        ms_perm: Order of stabilizer steps. See experiments/GBCodes.ipynb for example specification. 
+        args:
+            gate1_err: Single qubit gate error rate
+            gate2_err: Two qubit gate error rate
+            readout_err: Readout error rate
+            t1: T1 relaxation time
+            t2: T2 relaxation time
+            tr: Rydberg state relaxation time
+            idle: Include idle errors
+            dec_type: Type of decoder to use (X, Z, or all)
+            num_rounds: Number of rounds of stabilizers to run
+            ms_perm: Movement schedule specification. Defaults to TSP solved movement schedule
+                     Manual specification is ugly, but is grouped by 4s. Within each group
+                     0: No periodicity, 1: Horizontal periodicity, 2: Vertical periodicity, 3: Both periodicities
+                     
+                     0-4: Z stabilizers for B poly term 0
+                     5-8: Z stabilizers for B poly term 1
+                     9-12: Z stabilizers for B poly term 2
+                     ...
+                     13-16: Z stabilizers for A poly term 0
+                     17-20: Z stabilizers for A poly term 1
+                     21-24: Z stabilizers for A poly term 2
+                     ...
+                     Repeat for X stabilizers
+
+                     The order of these indicies defines the order in which the polynomial terms are ordered
         '''
         meas_record = []
         data_1_len = len(self.z_ancilla[0].l_data)
@@ -234,7 +292,11 @@ class GBCode():
 
         ms_sched = {}
         if not ms_perm:
-            ms_perm = np.arange(8 * data_1_len + 8 * data_2_len) 
+            req_length = 8 * (len(self.a_poly) + len(self.b_poly))
+            ms_perm = self.schedule_movement()
+            for i in range(req_length):
+                if i not in ms_perm:
+                    ms_perm.append(i)
         t = 0
         
         # Z stabilizers
@@ -242,27 +304,32 @@ class GBCode():
             for periodicity in range(4):
                 step = ("Z", {periodicity: ("CX", [(anc.l_data[i][1], anc) for anc in self.z_ancilla 
                                             if anc.l_data[i][0] == periodicity])})
-                ms_sched[ms_perm[t]] = step
+                sched_time = ms_perm.index(t)
+                ms_sched[sched_time] = step
                 t += 1
         for i in range(data_2_len):
             for periodicity in range(4):
                 step = ("Z", {periodicity: ("CX", [(anc.r_data[i][1], anc) for anc in self.z_ancilla
                                             if anc.r_data[i][0] == periodicity])})
-                ms_sched[ms_perm[t]] = step
+                sched_time = ms_perm.index(t)
+                ms_sched[sched_time] = step
                 t += 1
         # X stabilizers
         for i in range(data_2_len):
             for periodicity in range(4):
-                step = ("X", {periodicity: ("CX", [(anc, anc.l_data[i][1]) for anc in self.x_ancilla
-                                            if anc.l_data[i][0] == periodicity])})
-                ms_sched[ms_perm[t]] = step
+                step = ("X", {periodicity: ("CX", [(anc, anc.r_data[i][1]) for anc in self.x_ancilla
+                                            if anc.r_data[i][0] == periodicity])})
+                sched_time = ms_perm.index(t)
+                ms_sched[sched_time] = step
                 t += 1
         for i in range(data_1_len):
             for periodicity in range(4):
-                step = ("X", {periodicity: ("CX", [(anc, anc.r_data[i][1]) for anc in self.x_ancilla
-                                            if anc.r_data[i][0] == periodicity])})
-                ms_sched[ms_perm[t]] = step
+                step = ("X", {periodicity: ("CX", [(anc, anc.l_data[i][1]) for anc in self.x_ancilla
+                                            if anc.l_data[i][0] == periodicity])})
+                sched_time = ms_perm.index(t)
+                ms_sched[sched_time] = step
                 t += 1
+        
         ms_sched = collections.OrderedDict(sorted(ms_sched.items()))
 
         all_ancilla = np.hstack(tuple(self.x_ancilla + self.z_ancilla))
@@ -292,21 +359,18 @@ class GBCode():
         
         def apply_2gate(circ, gate_step, basis):
             err_qubits = []
-            shifts = {}
-            curr_data = []
-            for periodicity, (gate, qubit_pairs) in gate_step.items():
+            shift = None
+            for _, (gate, qubit_pairs) in gate_step.items():
                 for q1, q2 in qubit_pairs:
                     circ.append(gate, [q1.qbit_id, q2.qbit_id])
                     err_qubits += [q1.qbit_id, q2.qbit_id]
                     anc = q1 if q1 in all_ancilla else q2
                     data = q2 if q1 in all_ancilla else q1
-                    curr_data += [data]
                     new_shift = (self.atom_pos[data][0] - self.atom_pos[anc][0], self.atom_pos[data][1] - self.atom_pos[anc][1])
-                    if new_shift in shifts:
-                        shifts[new_shift] += [anc]
-                    else:
-                        shifts[new_shift] = [anc]
-            move_time = self.rearrange([anc for anc in (self.z_ancilla if basis == 'Z' else self.x_ancilla)], shifts)
+                    if not shift:
+                        shift = new_shift
+                    assert shift == new_shift
+            move_time = self.move_atoms([anc for anc in (self.z_ancilla if basis == 'Z' else self.x_ancilla)], shift)
             self.stab_move_time += move_time
             if len(err_qubits) > 0:
                 if idle:
@@ -337,11 +401,20 @@ class GBCode():
 
         def stabilizer_circ(circ):
             self.stab_move_time = 0
+            self.x_pos_history = []
             apply_1gate(circ, "H", [anc.qbit_id for anc in self.x_ancilla])
 
             for _, (basis, gate_step) in ms_sched.items():
                 apply_2gate(circ, gate_step, basis)
                     
+            # Move ancilla back
+            self.stab_move_time += self.move_atoms(self.z_ancilla, 
+                                                   (self.z_ancilla[0].coords[0] - self.atom_pos[self.z_ancilla[0]][0],
+                                                    self.z_ancilla[0].coords[1] - self.atom_pos[self.z_ancilla[0]][1]))
+            self.stab_move_time += self.move_atoms(self.x_ancilla, 
+                                                   (self.x_ancilla[0].coords[0] - self.atom_pos[self.x_ancilla[0]][0],
+                                                    self.x_ancilla[0].coords[1] - self.atom_pos[self.x_ancilla[0]][1]))
+
             apply_1gate(circ, "H", [anc.qbit_id for anc in self.x_ancilla])
 
             # Readout syndromes
