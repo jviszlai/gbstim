@@ -1,0 +1,1 @@
+Stim simulation code for generalized bicycle codes with atom array movement. See https://arxiv.org/abs/2311.16980 for preprint!
