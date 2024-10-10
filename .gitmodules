@@ -1,0 +1,3 @@
+[submodule "Enola"]
+	path = Enola
+	url = git@github.com:UCLA-VAST/Enola.git
