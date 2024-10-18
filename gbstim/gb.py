@@ -3,6 +3,7 @@ import numpy as np
 import stim
 import galois
 import collections
+import time
 from ldpc import bposd_decoder
 from concorde.tsp import TSPSolver
 
@@ -247,7 +248,10 @@ class GBCode():
                 pts_dict[tuple(subgrid)] = len(self.b_poly) * 4 + 4 * i + j
                 pts.append(subgrid)
         pt_array = np.array(pts)
+        routing_time = time.time()
         sol = TSPSolver().from_data(pt_array[:, 0], pt_array[:, 1], norm="EUC_2D").solve(verbose=False).tour[1:]
+        routing_time = time.time() - routing_time
+        print(f'ROUTING TIME: {routing_time} s')
         ms_perm = []
         # Z Sched
         for pt_idx in sol:
