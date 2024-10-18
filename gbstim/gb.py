@@ -446,7 +446,8 @@ class GBCode():
         circ.append("SHIFT_COORDS", [], (0, 0, 1))
         
         # Stabilizers
-        repeated_stabilizers(circ, num_rounds)
+        if num_rounds > 1:
+            repeated_stabilizers(circ, num_rounds - 1)
 
         # Measure out data
         meas_qubits(circ, "M", [qubit.qbit_id for qubit in all_data], perfect=False)
