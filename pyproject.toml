@@ -15,6 +15,7 @@ galois = "^0.4.2"
 beliefmatching = "^0.1.1"
 ipykernel = "^6.29.5"
 pyconcorde = {git = "https://github.com/jvkersch/pyconcorde"}
+parse = "^1.20.2"
 
 
 [build-system]

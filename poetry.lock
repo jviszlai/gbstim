@@ -1026,6 +1026,17 @@ files = [
 ]
 
 [[package]]
+name = "parse"
+version = "1.20.2"
+description = "parse() is the opposite of format()"
+optional = false
+python-versions = "*"
+files = [
+    {file = "parse-1.20.2-py2.py3-none-any.whl", hash = "sha256:967095588cb802add9177d0c0b6133b5ba33b1ea9007ca800e526f42a85af558"},
+    {file = "parse-1.20.2.tar.gz", hash = "sha256:b41d604d16503c79d81af5165155c0b20f6c8d6c559efa66b4b695c3e5a0a0ce"},
+]
+
+[[package]]
 name = "parso"
 version = "0.8.4"
 description = "A Python Parser"
@@ -1825,4 +1836,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "c781ec1b4f9b971d6983dfdd0d3b8e3736ff32b7a27d71c40a5dde4f92ee04e8"
+content-hash = "63460e0e950bd671cb78c820d7d2e7212f7f487da4cc4b2126dcc685192712f0"
