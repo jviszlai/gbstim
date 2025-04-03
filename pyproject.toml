@@ -6,7 +6,7 @@ authors = ["Joshua Viszlai <viszlai@uchicago.edu>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "^3.10"
 stim = "^1.13.0"
 sinter = "^1.13.0"
 matplotlib = "^3.9.2"

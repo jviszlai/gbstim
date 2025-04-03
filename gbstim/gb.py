@@ -274,13 +274,13 @@ class GBCode():
                      Manual specification is ugly, but is grouped by 4s. Within each group
                      0: No periodicity, 1: Horizontal periodicity, 2: Vertical periodicity, 3: Both periodicities
                      
-                     0-4: Z stabilizers for B poly term 0
-                     5-8: Z stabilizers for B poly term 1
-                     9-12: Z stabilizers for B poly term 2
+                     0-3: Z stabilizers for B poly term 0
+                     4-7: Z stabilizers for B poly term 1
+                     8-11: Z stabilizers for B poly term 2
                      ...
-                     13-16: Z stabilizers for A poly term 0
-                     17-20: Z stabilizers for A poly term 1
-                     21-24: Z stabilizers for A poly term 2
+                     12-15: Z stabilizers for A poly term 0
+                     16-19: Z stabilizers for A poly term 1
+                     20-23: Z stabilizers for A poly term 2
                      ...
                      Repeat for X stabilizers
 
