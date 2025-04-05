@@ -3,7 +3,7 @@ import numpy as np
 import stim
 import galois
 import collections
-from ldpc import bposd_decoder
+from ldpc.bposd_decoder import BpOsdDecoder
 from concorde.tsp import TSPSolver
 
 class LogicalQubit():
@@ -203,7 +203,7 @@ class GBCode():
         for i in range(T):
             i_obs = obs[np.random.randint(self.k)]
             fake_check = np.vstack((check, i_obs))
-            decoder = bposd_decoder(fake_check, max_iter=50, osd_method="osd_0", **kwargs)
+            decoder = BpOsdDecoder(fake_check, error_channel=list((1e-3)*np.ones(fake_check.shape[1])), max_iter=50, osd_method="osd_0", **kwargs)
             fake_syndrome = np.zeros(fake_check.shape[0])
             fake_syndrome[-1] = 1
             prediction = decoder.decode(fake_syndrome)   

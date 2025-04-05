@@ -5,51 +5,11 @@ from sinter import CompiledDecoder, Decoder
 from stim import DetectorErrorModel
 
 from beliefmatching import detector_error_model_to_check_matrices
-from ldpc import bposd_decoder, bp_decoder
+from ldpc.bposd_decoder import BpOsdDecoder
+from ldpc.bp_decoder import BpDecoder
+from ldpc.bplsd_decoder import BpLsdDecoder
 
-class CompiledBP(CompiledDecoder):
-
-    def __init__(self, check_matrices, decoder):
-        self.check_matrices = check_matrices
-        self.decoder = decoder
-
-    def decode_shots_bit_packed(self, 
-                                bit_packed_detection_event_data: np.ndarray
-                               ) -> np.ndarray:
-        obs_flip_data = []
-        for shot_data in bit_packed_detection_event_data:
-            unpacked_data = np.unpackbits(shot_data, bitorder='little', count=self.check_matrices.check_matrix.shape[0])
-            pred_errors = self.decoder.decode(unpacked_data)
-            obs_pred = (self.check_matrices.observables_matrix @ pred_errors) % 2
-            obs_flip_data.append(np.packbits(obs_pred, bitorder='little'))
-
-        return np.array(obs_flip_data)
-
-class BP(Decoder):
-
-    def __init__(self, **kwargs):
-        self.decoder_kwargs = kwargs
-
-    def compile_decoder_for_dem(self, 
-                                dem: DetectorErrorModel
-                               ) -> CompiledDecoder:
-        check_matrices = detector_error_model_to_check_matrices(dem, allow_undecomposed_hyperedges=True)
-        decoder = bp_decoder(check_matrices.check_matrix, channel_probs=check_matrices.priors, **self.decoder_kwargs)
-        return CompiledBP(check_matrices, decoder)
-
-    def decode_via_files(self, 
-                         *, 
-                         num_shots: int, 
-                         num_dets: int, 
-                         num_obs: int, 
-                         dem_path: pathlib.Path, 
-                         dets_b8_in_path: pathlib.Path, 
-                         obs_predictions_b8_out_path: pathlib.Path, 
-                         tmp_dir: pathlib.Path
-                        ) -> None:
-        raise NotImplementedError()
-
-class CompiledBPOSD(CompiledDecoder):
+class CompiledBPTypeDecoder(CompiledDecoder):
 
     def __init__(self, check_matrices, decoder):
         self.check_matrices = check_matrices
@@ -67,17 +27,18 @@ class CompiledBPOSD(CompiledDecoder):
 
         return np.array(obs_flip_data)
 
-class BPOSD(Decoder):
+class BPTypeDecoder(Decoder):
 
-    def __init__(self, **kwargs):
+    def __init__(self, decoder_cls, **kwargs):
+        self.decoder_cls = decoder_cls
         self.decoder_kwargs = kwargs
 
     def compile_decoder_for_dem(self, 
                                 dem: DetectorErrorModel
                                ) -> CompiledDecoder:
         check_matrices = detector_error_model_to_check_matrices(dem, allow_undecomposed_hyperedges=True)
-        decoder = bposd_decoder(check_matrices.check_matrix, channel_probs=check_matrices.priors, **self.decoder_kwargs)
-        return CompiledBPOSD(check_matrices, decoder)
+        decoder = self.decoder_cls(check_matrices.check_matrix, error_channel=list(check_matrices.priors), **self.decoder_kwargs)
+        return CompiledBPTypeDecoder(check_matrices, decoder)
 
     def decode_via_files(self, 
                          *, 
@@ -90,6 +51,21 @@ class BPOSD(Decoder):
                          tmp_dir: pathlib.Path
                         ) -> None:
         raise NotImplementedError()
+
+class BP(BPTypeDecoder):
+
+    def __init__(self, **kwargs):
+        super().__init__(BpDecoder, **kwargs)
+
+class BPOSD(BPTypeDecoder):
+
+    def __init__(self, **kwargs):
+        super().__init__(BpOsdDecoder, **kwargs)
+
+class BPLSD(BPTypeDecoder):
+
+    def __init__(self, **kwargs):
+        super().__init__(BpLsdDecoder, **kwargs)
 
 class CompiledCSSWindowBPOSD(CompiledDecoder):
     
