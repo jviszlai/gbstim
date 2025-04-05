@@ -258,7 +258,8 @@ class GBCode():
 
         return ms_perm
     
-    def stim_circ(self, gate1_err=0, gate2_err=0, readout_err=0, t1=1e6, t2=1e6, tr=1e6, idle=True, dec_type="all", num_rounds=1, ms_perm=None):
+    def stim_circ(self, gate1_err=0, gate2_err=0, readout_err=0, t1=1e6, t2=1e6, tr=1e6, 
+                  idle=True, dec_type="all", num_rounds=1, ms_perm=None, ms_sched=None):
         '''
         args:
             gate1_err: Single qubit gate error rate
@@ -285,52 +286,53 @@ class GBCode():
                      Repeat for X stabilizers
 
                      The order of these indicies defines the order in which the polynomial terms are ordered
+            ms_sched: Absolute ordering of CNOTs for all ancilla, qubit pairs to support arbitrary schedules
         '''
         meas_record = []
         data_1_len = len(self.z_ancilla[0].l_data)
         data_2_len = len(self.z_ancilla[0].r_data)
-
-        ms_sched = {}
-        if not ms_perm:
-            req_length = 8 * (len(self.a_poly) + len(self.b_poly))
-            ms_perm = self.schedule_movement()
-            for i in range(req_length):
-                if i not in ms_perm:
-                    ms_perm.append(i)
-        t = 0
         
-        # Z stabilizers
-        for i in range(data_1_len):
-            for periodicity in range(4):
-                step = ("Z", {periodicity: ("CX", [(anc.l_data[i][1], anc) for anc in self.z_ancilla 
-                                            if anc.l_data[i][0] == periodicity])})
-                sched_time = ms_perm.index(t)
-                ms_sched[sched_time] = step
-                t += 1
-        for i in range(data_2_len):
-            for periodicity in range(4):
-                step = ("Z", {periodicity: ("CX", [(anc.r_data[i][1], anc) for anc in self.z_ancilla
-                                            if anc.r_data[i][0] == periodicity])})
-                sched_time = ms_perm.index(t)
-                ms_sched[sched_time] = step
-                t += 1
-        # X stabilizers
-        for i in range(data_2_len):
-            for periodicity in range(4):
-                step = ("X", {periodicity: ("CX", [(anc, anc.r_data[i][1]) for anc in self.x_ancilla
-                                            if anc.r_data[i][0] == periodicity])})
-                sched_time = ms_perm.index(t)
-                ms_sched[sched_time] = step
-                t += 1
-        for i in range(data_1_len):
-            for periodicity in range(4):
-                step = ("X", {periodicity: ("CX", [(anc, anc.l_data[i][1]) for anc in self.x_ancilla
-                                            if anc.l_data[i][0] == periodicity])})
-                sched_time = ms_perm.index(t)
-                ms_sched[sched_time] = step
-                t += 1
-        
-        ms_sched = collections.OrderedDict(sorted(ms_sched.items()))
+        if not ms_sched:
+            if not ms_perm:
+                req_length = 8 * (len(self.a_poly) + len(self.b_poly))
+                ms_perm = self.schedule_movement()
+                for i in range(req_length):
+                    if i not in ms_perm:
+                        ms_perm.append(i)
+            ms_sched = {}
+            t = 0
+            # Z stabilizers
+            for i in range(data_1_len):
+                for periodicity in range(4):
+                    step = ("Z", {periodicity: ("CX", [(anc.l_data[i][1], anc) for anc in self.z_ancilla 
+                                                if anc.l_data[i][0] == periodicity])})
+                    sched_time = ms_perm.index(t)
+                    ms_sched[sched_time] = step
+                    t += 1
+            for i in range(data_2_len):
+                for periodicity in range(4):
+                    step = ("Z", {periodicity: ("CX", [(anc.r_data[i][1], anc) for anc in self.z_ancilla
+                                                if anc.r_data[i][0] == periodicity])})
+                    sched_time = ms_perm.index(t)
+                    ms_sched[sched_time] = step
+                    t += 1
+            # X stabilizers
+            for i in range(data_2_len):
+                for periodicity in range(4):
+                    step = ("X", {periodicity: ("CX", [(anc, anc.r_data[i][1]) for anc in self.x_ancilla
+                                                if anc.r_data[i][0] == periodicity])})
+                    sched_time = ms_perm.index(t)
+                    ms_sched[sched_time] = step
+                    t += 1
+            for i in range(data_1_len):
+                for periodicity in range(4):
+                    step = ("X", {periodicity: ("CX", [(anc, anc.l_data[i][1]) for anc in self.x_ancilla
+                                                if anc.l_data[i][0] == periodicity])})
+                    sched_time = ms_perm.index(t)
+                    ms_sched[sched_time] = step
+                    t += 1
+            
+            ms_sched = collections.OrderedDict(sorted(ms_sched.items()))
 
         all_ancilla = np.hstack(tuple(self.x_ancilla + self.z_ancilla))
         dec_ancilla = self.x_ancilla if dec_type == 'X' else self.z_ancilla if dec_type == 'Z' else all_ancilla
